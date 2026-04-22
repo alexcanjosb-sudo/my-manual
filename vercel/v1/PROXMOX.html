@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MWireGuard + Cloudflare </title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 12pt;
+            line-height: 1.5;
+            background: #fefefe;
+            color: #1e1e1e;
+        }
+        .container {
+            max-width: 21cm;
+            margin: 0 auto;
+            background: white;
+            padding: 3cm 2cm 2cm 3cm;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        }
+        h1 { font-size: 18pt; font-weight: bold; text-align: center; margin: 2rem 0 1rem; }
+        h2 { font-size: 16pt; font-weight: bold; margin-top: 1.8rem; margin-bottom: 0.8rem; border-bottom: 1px solid #aaa; }
+        h3 { font-size: 14pt; font-weight: bold; margin-top: 1.4rem; margin-bottom: 0.6rem; }
+        p, li { text-align: justify; margin-bottom: 0.5rem; }
+        ul, ol { margin-left: 2rem; margin-bottom: 1rem; }
+        pre, code {
+            font-family: 'Courier New', monospace;
+            font-size: 10pt;
+            background: #f4f4f4;
+            border-left: 4px solid #2c7da0;
+            padding: 0.8rem;
+            display: block;
+            margin: 1rem 0;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        code { display: inline; background: #f0f0f0; padding: 0.2rem 0.4rem; border-left: none; }
+        pre code { background: none; padding: 0; border-left: none; }
+        .note { background: #e9f5fe; border-left: 6px solid #0a6e8c; padding: 0.8rem 1.2rem; margin: 1.2rem 0; border-radius: 0 8px 8px 0; }
+        .warning { background: #fff3e0; border-left: 6px solid #e67e22; padding: 0.8rem 1.2rem; margin: 1.2rem 0; }
+        .important { background: #fce4d6; border-left: 6px solid #c0392b; padding: 0.8rem 1.2rem; margin: 1.2rem 0; }
+        .activity-machine { width: 100%; border-collapse: collapse; margin: 1.5rem 0; }
+        .activity-machine th, .activity-machine td { border: 1px solid #555; padding: 0.6rem; vertical-align: top; text-align: left; }
+        .activity-machine th { background: #e2eaf1; }
+        .toc { margin: 1.5rem 0; background: #f9f9f9; padding: 0.8rem 1.5rem; border: 1px solid #ddd; }
+        .toc ul { list-style: none; margin-left: 0; }
+        .toc li { margin-bottom: 0.3rem; }
+        .footer-note { margin-top: 2rem; font-size: 10pt; text-align: center; border-top: 1px solid #ccc; padding-top: 0.8rem; }
+        @media print { .container { box-shadow: none; padding: 2cm; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div style="text-align: center; margin-bottom: 3rem;">
+        <h1 style="margin-top: 0;">MANUAL DE IMPLANTAÇÃO</h1>
+        <h1 style="margin-top: 0;">PROXMOX-HA/LAB</h1>
+        <h2 style="border: none;">WireGuard + Cloudflare WARP</h2>
+        <p><strong>Versão 9.0</strong> – Justificativa corrigida (WARP não depende do WireGuard nativo)</p>
+        <p>Autor: Equipe Técnica | Abril/2026</p>
+    </div>
+
+    <div class="toc">
+        <h3 style="margin-top: 0;">SUMÁRIO</h3>
+        <ul>
+            <li><a href="#ordem">1 Ordem de instalação (WireGuard → WARP)</a></li>
+            <li><a href="#wireguard">2 Instalar WireGuard nativo</a></li>
+            <li><a href="#warp">3 Instalar Cloudflare WARP</a></li>
+            <li><a href="#extrair">4 Extrair credenciais (wgcf)</a></li>
+            <li><a href="#config-wg0">5 Configurar wg0.conf com proteção semântica</a></li>
+            <li><a href="#remover-warp">6 Remover WARP oficial</a></li>
+            <li><a href="#dns-persistente">7 DNS persistente – método original (dns.config + chattr +i + symlink)</a></li>
+            <li><a href="#boot">8 Habilitar WireGuard no boot</a></li>
+            <li><a href="#testes">9 Validação final</a></li>
+            <li><a href="#comandos">10 Comandos úteis</a></li>
+            <li><a href="#referencias">11 Referências</a></li>
+        </ul>
+    </div>
+
+    <h2 id="ordem">1 Ordem de instalação (WireGuard primeiro, depois WARP)</h2>
+    <p>O cliente oficial da Cloudflare (<code>cloudflare-warp</code>) utiliza sua própria implementação de túnel (BoringTun) e <strong>não depende</strong> do pacote <code>wireguard-tools</code> do sistema para funcionar. No entanto, para os objetivos deste manual – extrair as chaves WireGuard e depois configurar uma interface <strong>nativa</strong> (<code>wg0</code>) utilizando as ferramentas <code>wg</code> e <code>wg-quick</code> – é necessário que o WireGuard esteja instalado antes da extração. Além disso, como o WARP será removido após a extração (para evitar conflitos de rota), a ordem sequencial proposta (primeiro WireGuard, depois WARP) é a mais limpa e didática.</p>
+    <div class="note">✔ Portanto, a ordem <strong>WireGuard → WARP</strong> é uma recomendação de fluxo, não uma imposição técnica. O WARP funcionaria isoladamente, mas para nossa configuração manual final, precisamos do WireGuard nativo.</div>
+
+    <h2 id="wireguard">2 Instalar WireGuard nativo</h2>
+    <pre><code>sudo apt update
+sudo apt install wireguard wireguard-tools -y
+sudo modprobe wireguard</code></pre>
+    <div class="note">✔ Verifique o módulo: <code>lsmod | grep wireguard</code>.</div>
+
+    <h2 id="warp">3 Instalar Cloudflare WARP</h2>
+    <pre><code>sudo apt install cloudflare-warp -y
+sudo systemctl start warp-svc
+warp-cli registration new
+warp-cli mode tunnel
+warp-cli connect</code></pre>
+    <p>Teste rápido: <code>curl ifconfig.me</code> → deve exibir um IP da Cloudflare (ex.: 104.16.x.x).</p>
+
+    <h2 id="extrair">4 Extrair credenciais (wgcf)</h2>
+    <pre><code>curl -L https://github.com/ViRb3/wgcf/releases/download/v2.2.22/wgcf_2.2.22_linux_amd64 -o wgcf
+chmod +x wgcf
+./wgcf register
+./wgcf generate</code></pre>
+    <p>O arquivo <code>wgcf-profile.conf</code> contém a chave privada, endereços IP, DNS e endpoint. Guarde esses valores.</p>
+
+    <h2 id="config-wg0">5 Configurar wg0.conf com proteção semântica</h2>
+    <p><strong>Proteção semântica:</strong> usar <code>umask 077</code> em subshell para criar o arquivo com permissões 600.</p>
+    <pre><code>sudo mkdir -p /etc/wireguard
+cd /etc/wireguard
+sudo sh -c 'umask 077 && touch wg0.conf'
+sudo nano wg0.conf</code></pre>
+    <p>Conteúdo exemplo baseado no <code>wgcf-profile.conf</code> (valores <strong>modificados e aleatórios</strong> – não utilizar diretamente):</p>
+    <pre><code>[Interface]
+PrivateKey = ChavePrivadaModificada_9f8s7d6f5g4h3j2k1l0
+Address = 172.31.87.14/32, 2606:4700:1234:5678:90ab:cdef:1234:5678/128
+DNS = 1.1.1.1, 2606:4700:4700::1111
+MTU = 1280
+
+[Peer]
+PublicKey = ChavePublicaModificada_sMI5Q9zLxVbNcXzAqWertyUiop
+AllowedIPs = 0.0.0.0/0, ::/0
+Endpoint = engage.cloudflareclient.com:2408</code></pre>
+    <div class="note">🔁 Os endereços <code>172.31.87.14/32</code> e <code>2606:4700:1234:5678:90ab:cdef:1234:5678/128</code> são <strong>exemplos aleatórios</strong> semanticamente válidos. No ambiente real, utilize os endereços exatos fornecidos pelo <code>wgcf-profile.conf</code>.</div>
+    <p>Reforce a permissão:</p>
+    <pre><code>sudo chmod 600 /etc/wireguard/wg0.conf</code></pre>
+
+    <h2 id="remover-warp">6 Remover WARP oficial (evitar conflito)</h2>
+    <p>Como utilizaremos apenas a interface nativa <code>wg0</code>, removemos o cliente oficial para eliminar qualquer conflito de rotas ou serviços concorrentes.</p>
+    <pre><code>warp-cli disconnect
+sudo systemctl disable warp-svc
+sudo systemctl stop warp-svc
+sudo apt purge cloudflare-warp -y
+sudo apt autoremove -y</code></pre>
+
+    <h2 id="dns-persistente">7 DNS persistente – método original (dns.config + chattr +i + symlink)</h2>
+    <p>Após subir a interface <code>wg0</code>, o WireGuard atualiza <code>/etc/resolv.conf</code>, mas o sistema pode sobrescrevê-lo no reboot. A solução original e semanticamente correta (sem remover arquivos) é:</p>
+    
+    <h3>7.1 Subir a interface wg0 e capturar o DNS gerado</h3>
+    <pre><code>sudo wg-quick up wg0
+cat /etc/resolv.conf   # anote os nameservers (ex.: 1.1.1.1, 2606:4700:4700::1111)</code></pre>
+
+    <h3>7.2 Criar o arquivo /etc/dns.config com proteção semântica</h3>
+    <pre><code>sudo sh -c 'umask 077 && touch /etc/dns.config'
+sudo nano /etc/dns.config</code></pre>
+    <p>Conteúdo exemplo (use os servidores observados no passo anterior):</p>
+    <pre><code>nameserver 1.1.1.1
+nameserver 1.0.0.1
+nameserver 2606:4700:4700::1111</code></pre>
+
+    <h3>7.3 Tornar o arquivo imutável (chattr +i)</h3>
+    <pre><code>sudo chattr +i /etc/dns.config</code></pre>
+
+    <h3>7.4 Redirecionar o link simbólico /etc/resolv.conf para o arquivo imutável</h3>
+    <p><strong>Sem remover o original</strong> – o comando <code>ln -sf</code> substitui o link existente de forma atômica:</p>
+    <pre><code>sudo ln -sf /etc/dns.config /etc/resolv.conf</code></pre>
+    <div class="important">✔ Esta abordagem preserva a estrutura padrão do sistema, não utiliza <code>rm</code> e garante que o DNS persista mesmo após reinicializações. Para editar o dns.config no futuro, será necessário primeiro remover o atributo imutável: <code>sudo chattr -i /etc/dns.config</code>.</div>
+
+    <h2 id="boot">8 Habilitar WireGuard na inicialização</h2>
+    <pre><code>sudo systemctl enable wg-quick@wg0
+sudo systemctl start wg-quick@wg0</code></pre>
+
+    <h2 id="testes">9 Validação final</h2>
+    <ul>
+        <li><strong>IP mascarado:</strong> <code>curl ifconfig.me</code> → IP da Cloudflare.</li>
+        <li><strong>DNS persistente:</strong> <code>cat /etc/resolv.conf</code> → deve mostrar os servidores configurados no <code>/etc/dns.config</code>.</li>
+        <li><strong>Imutabilidade:</strong> <code>lsattr /etc/dns.config</code> → exibe o atributo <code>i</code>.</li>
+        <li><strong>Resolução de nomes:</strong> <code>nslookup google.com</code> → o servidor deve ser 1.1.1.1 (ou o definido).</li>
+        <li><strong>Proteção do wg0.conf:</strong> <code>ls -l /etc/wireguard/wg0.conf</code> → permissões <code>-rw-------</code> (600).</li>
+        <li><strong>Teste de reboot:</strong> Reinicie o servidor e repita os testes – o túnel deve estar ativo e o DNS preservado.</li>
+    </ul>
+
+    <h2 id="comandos">10 Comandos úteis para administração</h2>
+    <table class="activity-machine">
+        <tr><th>Finalidade</th><th>Comando</th></tr>
+        <tr><td>Subir interface manual</td><td><code>sudo wg-quick up wg0</code></td></tr>
+        <tr><td>Descer interface</td><td><code>sudo wg-quick down wg0</code></td></tr>
+        <tr><td>Ver estatísticas WireGuard</td><td><code>sudo wg show</code></td></tr>
+        <tr><td>Reiniciar serviço wg-quick</td><td><code>sudo systemctl restart wg-quick@wg0</code></td></tr>
+        <tr><td>Editar dns.config (temporariamente)</td><td><code>sudo chattr -i /etc/dns.config && sudo nano /etc/dns.config && sudo chattr +i /etc/dns.config</code></td></tr>
+    </table>
+
+    <h2 id="referencias">11 Referências</h2>
+    <p>WireGuard Project. <strong>Quick Start</strong>. Disponível em: https://www.wireguard.com/quickstart/.</p>
+    <p>Cloudflare. <strong>WARP Client for Linux</strong>. Disponível em: https://developers.cloudflare.com/warp-client/.</p>
+    <p>ViRb3. <strong>wgcf: WireGuard config generator for Cloudflare WARP</strong>. GitHub.</p>
+
+    <div class="footer-note">
+        <em>Desenvlab – Conformidade com análise estruturada e boas práticas.</em><br>
+        
+    </div>
+</div>
+</body>
+</html>
