@@ -104,8 +104,8 @@ chmod +x wgcf
 ./wgcf generate</code></pre>
     <p>O arquivo <code>wgcf-profile.conf</code> contém a chave privada, endereços IP, DNS e endpoint. Guarde esses valores.</p>
 
-    <h2 id="config-wg0">5 Configurar wg0.conf com proteção semântica</h2>
-    <p><strong>Proteção semântica:</strong> usar <code>umask 077</code> em subshell para criar o arquivo com permissões 600.</p>
+    <h2 id="config-wg0">5 Configurar wg0.conf com proteção</h2>
+    <p><strong>Proteção:</strong> usar <code>umask 077</code> em subshell para criar o arquivo com permissões 600.</p>
     <pre><code>sudo mkdir -p /etc/wireguard
 cd /etc/wireguard
 sudo sh -c 'umask 077 && touch wg0.conf'
@@ -121,7 +121,7 @@ MTU = 1280
 PublicKey = ChavePublicaModificada_sMI5Q9zLxVbNcXzAqWertyUiop
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = engage.cloudflareclient.com:2408</code></pre>
-    <div class="note">🔁 Os endereços <code>172.31.87.14/32</code> e <code>2606:4700:1234:5678:90ab:cdef:1234:5678/128</code> são <strong>exemplos aleatórios</strong> semanticamente válidos. No ambiente real, utilize os endereços exatos fornecidos pelo <code>wgcf-profile.conf</code>.</div>
+    <div class="note">🔁 Os endereços <code>172.31.87.14/32</code> e <code>2606:4700:1234:5678:90ab:cdef:1234:5678/128</code> são <strong>exemplos aleatórios</strong>. No ambiente real, utilize os endereços exatos fornecidos pelo <code>wgcf-profile.conf</code>.</div>
     <p>Reforce a permissão:</p>
     <pre><code>sudo chmod 600 /etc/wireguard/wg0.conf</code></pre>
 
@@ -134,13 +134,13 @@ sudo apt purge cloudflare-warp -y
 sudo apt autoremove -y</code></pre>
 
     <h2 id="dns-persistente">7 DNS persistente – método original (dns.config + chattr +i + symlink)</h2>
-    <p>Após subir a interface <code>wg0</code>, o WireGuard atualiza <code>/etc/resolv.conf</code>, mas o sistema pode sobrescrevê-lo no reboot. A solução original e semanticamente correta (sem remover arquivos) é:</p>
+    <p>Após subir a interface <code>wg0</code>, o WireGuard atualiza <code>/etc/resolv.conf</code>, mas o sistema pode sobrescrevê-lo no reboot. A solução original correta (sem remover arquivos) é:</p>
     
     <h3>7.1 Subir a interface wg0 e capturar o DNS gerado</h3>
     <pre><code>sudo wg-quick up wg0
 cat /etc/resolv.conf   # anote os nameservers (ex.: 1.1.1.1, 2606:4700:4700::1111)</code></pre>
 
-    <h3>7.2 Criar o arquivo /etc/dns.config com proteção semântica</h3>
+    <h3>7.2 Criar o arquivo /etc/dns.config com proteção</h3>
     <pre><code>sudo sh -c 'umask 077 && touch /etc/dns.config'
 sudo nano /etc/dns.config</code></pre>
     <p>Conteúdo exemplo (use os servidores observados no passo anterior):</p>
